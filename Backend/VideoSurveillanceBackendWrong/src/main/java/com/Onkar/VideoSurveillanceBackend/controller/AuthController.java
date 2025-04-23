@@ -33,7 +33,6 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid username or password");
         }
     }
-
     public static class AuthRequest {
         private String username;
         private String password;
