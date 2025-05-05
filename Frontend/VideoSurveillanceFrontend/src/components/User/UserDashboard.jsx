@@ -5,6 +5,7 @@ const UserDashboard = () => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const isCameraActiveRef = useRef(false);
   const [snapshots, setSnapshots] = useState([]);
 
   const startCamera = async () => {
@@ -13,6 +14,8 @@ const UserDashboard = () => {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
+        isCameraActiveRef.current = true;
+        sendFrameForDetection();  // Start sending frames
       }
     } catch (err) {
       console.error("Camera access denied:", err);
@@ -20,6 +23,7 @@ const UserDashboard = () => {
   };
 
   const stopCamera = () => {
+    isCameraActiveRef.current = false;  // Stop sending frames
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -41,6 +45,42 @@ const UserDashboard = () => {
     setSnapshots((prev) => [...prev, dataUrl]);
   };
 
+  const sendFrameForDetection = async () => {
+    if (!videoRef.current || !canvasRef.current || !isCameraActiveRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext("2d");
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const frameData = canvas.toDataURL("image/jpeg");
+
+    try {
+      const response = await fetch("http://localhost:5000/predict-frame", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ frame: frameData }),
+      });
+
+      const data = await response.json();
+      if (data?.error) {
+        console.error("Backend error:", data.error);
+      } else {
+        console.log("Prediction:", data);
+      }
+    } catch (error) {
+      console.error("Frame send failed:", error);
+    }
+
+    // Keep sending frames every 500ms if camera is still active
+    if (isCameraActiveRef.current) {
+      setTimeout(sendFrameForDetection, 500);
+    }
+  };
+
   const callPolice = () => {
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by your browser.");
@@ -50,28 +90,19 @@ const UserDashboard = () => {
     navigator.geolocation.getCurrentPosition((position) => {
       const { latitude, longitude } = position.coords;
 
-      // Send location and snapshots to backend
-      fetch("http://localhost:8080/send-alert", {
+      fetch("http://localhost:5000/send-alert", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          latitude,
-          longitude,
-          snapshots, // send the array of snapshots
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ latitude, longitude, snapshots }),
       })
         .then((res) => {
           if (res.ok) {
-            alert("🚨 Police have been notified with your location and snapshots.");
+            alert("🚨 Police have been notified.");
           } else {
-            alert("❌ Failed to contact police. Please try again.");
+            alert("❌ Failed to contact police.");
           }
         })
-        .catch((err) => {
-          console.error("Error sending data to police:", err);
-        });
+        .catch((err) => console.error("Error sending data to police:", err));
     });
   };
 
@@ -80,24 +111,22 @@ const UserDashboard = () => {
       navigator.geolocation.getCurrentPosition((position) => {
         const { latitude, longitude } = position.coords;
 
-        fetch("http://localhost:8080/send-location", {
+        fetch("http://localhost:5000/send-location", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ latitude, longitude }),
         });
 
         alert(`📍 Location sent: ${latitude}, ${longitude}`);
       });
     } else {
-      alert("Geolocation is not supported by your browser.");
+      alert("Geolocation not supported.");
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6 space-y-8">
-        <Navbar/>
+      <Navbar />
       <header className="text-center">
         <h1 className="text-4xl font-extrabold tracking-tight mb-2">VisionGuard 🛡️</h1>
         <p className="text-gray-400 text-sm">Surveillance User Dashboard</p>
@@ -142,22 +171,14 @@ const UserDashboard = () => {
       </div>
 
       <div className="flex flex-col items-center gap-4 mt-6">
-        <button
-          onClick={sendLocation}
-          className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300"
-        >
+        <button onClick={sendLocation} className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300">
           Send Live Location to Police
         </button>
-
-        <button
-          onClick={callPolice}
-          className="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300"
-        >
+        <button onClick={callPolice} className="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300">
           Call Police 🚨
         </button>
       </div>
 
-      {/* Hidden canvas for snapshot */}
       <canvas ref={canvasRef} style={{ display: "none" }} />
     </div>
   );
