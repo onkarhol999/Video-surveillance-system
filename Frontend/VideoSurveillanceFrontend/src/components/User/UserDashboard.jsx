@@ -81,48 +81,33 @@ const UserDashboard = () => {
     }
   };
 
-  const callPolice = () => {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition((position) => {
-      const { latitude, longitude } = position.coords;
-
-      fetch("http://localhost:5000/send-alert", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ latitude, longitude, snapshots }),
-      })
-        .then((res) => {
-          if (res.ok) {
-            alert("🚨 Police have been notified.");
-          } else {
-            alert("❌ Failed to contact police.");
-          }
-        })
-        .catch((err) => console.error("Error sending data to police:", err));
-    });
-  };
+ 
 
   const sendLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((position) => {
         const { latitude, longitude } = position.coords;
-
+  
+        // Include snapshots with the location data
         fetch("http://localhost:5000/send-location", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ latitude, longitude }),
-        });
-
-        alert(`📍 Location sent: ${latitude}, ${longitude}`);
+          body: JSON.stringify({ latitude, longitude, snapshots }), // send snapshots here
+        })
+          .then((response) => {
+            if (response.ok) {
+              alert(`📍 Location and snapshot(s) sent to the police.`);
+            } else {
+              alert("❌ Failed to send location and snapshot.");
+            }
+          })
+          .catch((err) => console.error("Error sending data to police:", err));
       });
     } else {
       alert("Geolocation not supported.");
     }
   };
+  
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6 space-y-8">
@@ -174,9 +159,12 @@ const UserDashboard = () => {
         <button onClick={sendLocation} className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300">
           Send Live Location to Police
         </button>
-        <button onClick={callPolice} className="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300">
+        <a
+          href="tel:100"
+          className="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300 text-center"
+        >
           Call Police 🚨
-        </button>
+        </a>
       </div>
 
       <canvas ref={canvasRef} style={{ display: "none" }} />
