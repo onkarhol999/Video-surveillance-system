@@ -7,6 +7,7 @@ const UserDashboard = () => {
   const streamRef = useRef(null);
   const isCameraActiveRef = useRef(false);
   const [snapshots, setSnapshots] = useState([]);
+  const [isSending, setIsSending] = useState(false); // Loading state
 
   const startCamera = async () => {
     try {
@@ -15,7 +16,7 @@ const UserDashboard = () => {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
         isCameraActiveRef.current = true;
-        sendFrameForDetection();  // Start sending frames
+        sendFrameForDetection();
       }
     } catch (err) {
       console.error("Camera access denied:", err);
@@ -23,7 +24,7 @@ const UserDashboard = () => {
   };
 
   const stopCamera = () => {
-    isCameraActiveRef.current = false;  // Stop sending frames
+    isCameraActiveRef.current = false;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -41,7 +42,7 @@ const UserDashboard = () => {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/png");
+    const dataUrl = canvas.toDataURL("image/png").split(',')[1]; // Only base64 content
     setSnapshots((prev) => [...prev, dataUrl]);
   };
 
@@ -75,39 +76,41 @@ const UserDashboard = () => {
       console.error("Frame send failed:", error);
     }
 
-    // Keep sending frames every 500ms if camera is still active
     if (isCameraActiveRef.current) {
       setTimeout(sendFrameForDetection, 500);
     }
   };
 
- 
-
   const sendLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const { latitude, longitude } = position.coords;
-  
-        // Include snapshots with the location data
-        fetch("http://localhost:5000/send-location", {
+    setIsSending(true); // Show loading and hide snapshots
+
+    fetch("https://ipapi.co/json/")
+      .then(res => res.json())
+      .then(data => {
+        const { latitude, longitude } = data;
+
+        return fetch("http://localhost:8080/api/send-location", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ latitude, longitude, snapshots }), // send snapshots here
-        })
-          .then((response) => {
-            if (response.ok) {
-              alert(`📍 Location and snapshot(s) sent to the police.`);
-            } else {
-              alert("❌ Failed to send location and snapshot.");
-            }
-          })
-          .catch((err) => console.error("Error sending data to police:", err));
+          body: JSON.stringify({ latitude, longitude, snapshots }),
+        });
+      })
+      .then((response) => {
+        if (response.ok) {
+          alert("📍 Location and snapshot(s) sent to the police.");
+          setSnapshots([]); // Clear after successful send
+        } else {
+          alert("❌ Failed to send location and snapshot.");
+        }
+      })
+      .catch((err) => {
+        console.error("Error sending data to police:", err);
+        alert("❌ Error sending location to police.");
+      })
+      .finally(() => {
+        setIsSending(false); // Restore UI
       });
-    } else {
-      alert("Geolocation not supported.");
-    }
   };
-  
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6 space-y-8">
@@ -138,14 +141,14 @@ const UserDashboard = () => {
           </button>
         </div>
 
-        {snapshots.length > 0 && (
+        {!isSending && snapshots.length > 0 && (
           <div className="mt-6 w-full">
             <h2 className="text-lg font-semibold text-center mb-4">📸 Snapshots Taken</h2>
             <div className="flex flex-wrap gap-4 justify-center">
               {snapshots.map((snap, index) => (
                 <img
                   key={index}
-                  src={snap}
+                  src={`data:image/png;base64,${snap}`}
                   alt={`Snapshot ${index + 1}`}
                   className="max-w-[200px] rounded-lg shadow-lg border"
                 />
@@ -156,12 +159,26 @@ const UserDashboard = () => {
       </div>
 
       <div className="flex flex-col items-center gap-4 mt-6">
-        <button onClick={sendLocation} className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300">
-          Send Live Location to Police
+        <button
+          onClick={sendLocation}
+          className="bg-blue-600 hover:bg-blue-700 hover:cursor-pointer px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300 flex items-center gap-2"
+          disabled={isSending}
+        >
+          {isSending ? (
+            <>
+              <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Sending...
+            </>
+          ) : (
+            "Send Location & Snapshot"
+          )}
         </button>
         <a
           href="tel:100"
-          className="bg-red-600 hover:bg-red-700 px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300 text-center"
+          className="bg-red-600 hover:bg-red-700 hover:cursor-pointer px-6 py-3 rounded-xl font-semibold shadow-lg transition duration-300 text-center"
         >
           Call Police 🚨
         </a>
